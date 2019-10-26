@@ -40,7 +40,6 @@ public class SumReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
 		   */
 			wordCount += value.get();
 		}
-		
 		/*
 		 * Call the write method on the Context object to emit a key
 		 * and a value from the reduce method. 

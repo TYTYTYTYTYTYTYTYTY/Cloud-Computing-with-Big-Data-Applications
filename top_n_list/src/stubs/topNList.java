@@ -1,79 +1,60 @@
 package stubs;
-
-
 import org.apache.hadoop.conf.Configuration;
+
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.DoubleWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.JobClient;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.log4j.Logger;
+/**
+ * This method claimed the usage of the configuration implementation tool
+ */
+public class topNList extends Configured implements Tool {
 
-
-public class topNList extends Configured implements Tool{
-	public static void main(String[] args) throws Exception{
-		int res = ToolRunner.run(new Configuration(), new topNList(),args );
-		
-		System.exit(res);
+	public static void main(String[] args) throws Exception {
+		int exitCode = ToolRunner.run(new topNList(), args);
+		System.exit(exitCode);
 	}
-	@Override
+	// with run(args) the configuration parameter can now affect the program 
 	public int run(String[] args) throws Exception {
-		 Configuration conf = getConf();
+		// check if the argument format is -D N=* <input> <output>
+		Configuration conf = getConf();
+		conf.get("N");
+		
+		if (args.length != 2) {
+	         System.out.print("usage topNlist -D N=* <input> <output>");
+	         System.exit(1);
+	      }
+		// set up job name, configuration N, set jar file
+		Job job = new Job(getConf());
+		job.setJarByClass(topNList.class);
+		job.setJobName("Top N");
+		//set up mapper reducer and num of reducer
+		job.setMapperClass(topNListMapper.class);
+		job.setReducerClass(topNListReducer.class);
+		job.setNumReduceTasks(1);
+		// setup mapper reducer input output data type
+		job.setMapOutputKeyClass(NullWritable.class);
+		job.setMapOutputValueClass(Text.class);
+		job.setOutputKeyClass(IntWritable.class);
+		job.setOutputValueClass(Text.class);
+		//set up input output path
+		FileInputFormat.setInputPaths(job, new Path(args[0]));
+		FileOutputFormat.setOutputPath(job, new Path(args[1]));
 
-		 String Job1_OutputPath = "aggregate/";
-		 conf.get("N");
-		 conf.set("fileNamesPath","hdfs://quickstart.cloudera:8020/user/cloudera/movie_titles.txt");
-		 if (args.length != 2) {
-		     System.out.printf("Usage: -D N=<N most popular movies> <input dir> <output dir>\n");
-	        System.exit(-1);
-		}
-		
-		Job job1 = new Job(conf);
-		
-		job1.setJarByClass(topNList.class);
-		
-		job1.setJobName("Aggregate");
-		FileInputFormat.setInputPaths(job1, new Path(args[0]));
-		FileOutputFormat.setOutputPath(job1, new Path(Job1_OutputPath));
-		
-		job1.setMapperClass(AggregateMapper.class);
-		job1.setReducerClass(AggregateReducer.class);
-		job1.setOutputKeyClass(IntWritable.class);
-		job1.setOutputValueClass(IntWritable.class);
-		
-		
-		Job job2 = new Job(conf);
-		
-		FileInputFormat.addInputPath(job2, new Path(Job1_OutputPath)); // job2 takes the input from job1
-		FileOutputFormat.setOutputPath(job2, new Path(args[1]));
-		
-		job2.setJarByClass(topNList.class);
-		
-		job2.setJobName("topNList");
-		
-		
-		job2.setMapperClass(topNListMapper.class);
-		job2.setReducerClass(topNListReducer.class);
-
-		job2.setMapOutputKeyClass(NullWritable.class);
-	    job2.setMapOutputValueClass(Text.class);
-		job2.setOutputKeyClass(IntWritable.class);
-		job2.setOutputValueClass(Text.class);
-		
-		
-		
-		
-		
-		boolean job1_success = job1.waitForCompletion(true);
-		// job2 waiting for job1 to be finished
-		if(job1_success) System.exit(job2.waitForCompletion(true) ? 0 : 1);
-		
-	   	return 0;
+		boolean status = job.waitForCompletion(true);
+		return status ? 0 : 1;
 	}
-	
 	
 }
