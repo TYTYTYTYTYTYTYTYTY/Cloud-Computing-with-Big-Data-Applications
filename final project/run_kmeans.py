@@ -1,57 +1,140 @@
-from coordinate_utility import *
+
 import sys 
 import re
+import math 
 from pyspark import SparkContext 
+
+
+def add_points(point1, point2):
+
+    # directly adding latitude and longitude must be wrong, convert to cartesian coordinates then add 
+
+    # if len(point1) == len(point2) and len(point1) ==2:
+    #     point1 = Sphe2cart(point1)
+    #     point2 = Sphe2cart(point2)
+
+    #     lon, lat = Cart2Sphe((point1[0]+ point2[0],point1[1]+ point2[1],point1[2]+ point2[2]))
+
+
+    # return((math.degrees(lon), math.degrees(lat)))
+    return (point1[0]+point2[0],point1[1]+point2[1])
+
+def Sphe2cart(coordinates):
+
+    #convert to radious coordinates
+    longitude , latitude = math.radians(coordinates[0]), math.radians(coordinates[1])
+
+    x,y,z = math.cos(latitude)*math.cos(longitude), math.cos(latitude)*math.sin(longitude), math.sin(latitude)
+
+    return((x,y,z))
+
+
+def Cart2Sphe(xyz):
+
+    longitude = math.atan2(xyz[0],xyz[1])
+    latitude = math.atan2(xyz[2],math.sqrt(xyz[0]**2 + xyz[1]**2))
+
+    return ((longitude,latitude))
+
+
+def get_Eculidian_Distance(point1, point2):
+
+    Cart1 = Sphe2cart(point1)
+    Cart2 = Sphe2cart(point2)
+    magnitude = 0
+
+    for i in range(3):
+        magnitude += (Cart2[i] - Cart1[i]) ** 2 
+
+    return math.sqrt(magnitude)
+
+def get_GreatCircle_Distance(point1, point2):
+
+    from_phi = math.radians(point1[0])
+    to_phi = math.radians(point2[0])
+    delta_phi = math.radians(point2[0] - point1[0])
+    delta_lambda = math.radians(point2[1] - point1[1])
+
+    a = math.sin(delta_phi/2) * math.sin(delta_phi/2) + math.cos(from_phi) * math.cos(to_phi) * math.sin(delta_lambda/2) * math.sin(delta_lambda/2)
+    delta_sigma = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+
+    return(6378.1 * delta_sigma)
+
+
+def get_Distance(point1, point2, method):
+    if method == "Eucl":
+        return get_Eculidian_Distance(point1, point2)
+    if method == "Circle":
+        return get_GreatCircle_Distance(point1, point2)
+    else:
+        return 0
+
+def get_Cloest_Point(point, center_list, method):
+    dist = []
+    for center in center_list:
+        dist.append(get_Distance(center, point, method))
+
+    return dist.index(min(dist))
+
+
+
+
+
+
 
 def main(data, k, method, output_directory, output_directory_centroids):
 
-	old_center_liset = data.takeSample(False, k)
-	centroids_RDD = sc.parallelize(old_center_liset)
+    old_center_list = data.takeSample(False, k)
+    #print(old_center_list)
+    centroids_RDD = sc.parallelize(old_center_list)
 
-	stop = False
-	converge_threshold = 0.1 
+    stop = False
+    converge_threshold = 0.1 
 
-	data_old = data.map(lambda point: (get_Cloest_Point(point, center_liset, method),point)).persist()
+    data_old = data.map(lambda point: (get_Cloest_Point(point, old_center_list, method),point)).persist()
+    # print(data_old.collect())
 
-	while not stop:
-		data_new = data_old.map(lambda line: (line[0], (line[1], 1)))\
-			.reduceByKey(lambda line1, line2: (add_points(line1[0],line2[0]), line1[1]+len[1]))\
-			.map(lambda line: (line[0], (line[1][0]/line[2], line[1][1]/line[2])))\
-			.sortByKey(True)\
-			.map(lambda line:line[1])\
-			.presist()
-
-
-		new_ceneter_list = data_next.collect()
-
-		converged = True
-
-		for i in range(k):
-			if converged and get_Distance(new_ceneter_list[i], old_center_list[i]) < converge_threshold:
-				converged = True
-			else:
-				converged = False
+    while not stop:
+        data_new = data_old.map(lambda line: (line[0], (line[1], 1)))\
+            .reduceByKey(lambda line1, line2: (add_points(line1[0],line2[0]), line1[1]+line2[1]))\
+            .map(lambda line: (line[0], (line[1][0][0]/line[1][1], line[1][0][1]/line[1][1])))\
+            .sortByKey(True)\
+            .map(lambda line:line[1])\
+            .persist()
 
 
-		if converged:
-			stop= True
+        new_ceneter_list = data_new.collect()
+        print(new_ceneter_list)
 
-		else:
-			old_center_list = new_ceneter_list
-			data_old = data.map(lambda point: (get_Cloest_Point(point, old_center_list,method),point)).persist()
+        converged = True
 
-			centroids_RDD = sc.parallelize(old_center_liset)
-			centroids_RDD.presist()
-
-			continue
-
+        for i in range(k):
+            if converged and get_Distance(new_ceneter_list[i], old_center_list[i], method) < converge_threshold:
+                converged = True
+            else:
+                converged = False
 
 
-	data_out = data.map(lambda point: (get_Cloest_Point(point,new_ceneter_list,method),point))
+        if converged:
+            stop= True
 
-	data_out.saveAsTextFile(output_directory)
+        else:
+            old_center_list = new_ceneter_list
+            data_old = data.map(lambda point: (get_Cloest_Point(point, old_center_list,method),point)).persist()
 
-	centroids_RDD.saveAsTextFile(output_directory_centroids)
+            centroids_RDD = sc.parallelize(old_center_list)
+            centroids_RDD.persist()
+
+            continue
+
+
+
+    data_out = data.map(lambda point: (get_Cloest_Point(point,new_ceneter_list,method),point))
+
+    data_out.saveAsTextFile(output_directory)
+
+    centroids_RDD.saveAsTextFile(output_directory_centroids)
 
 
 
@@ -69,25 +152,45 @@ def main(data, k, method, output_directory, output_directory_centroids):
 
 if __name__ == '__main__':
 
-	if len(sys.argv) != 5: 
-		print ("utility : <input_directory>, <k>, <distance_type(Ecul or Cricle)>, <output_directory (data with cluster label)>, <output_directory, (cluster center list)>")
+    # if len(sys.argv) != 5: 
+    #   print ("utility : <input_directory>, <k>, <distance_type(Ecul or Cricle)>, <output_directory(data with cluster label)>, <output_directory(cluster center list)>")
 
-		exit(-1)
+    #   exit(-1)
 
-	else:
+    # else:
 
-		input_file = sys.argv[1]
-		k  = int(sys.argv[2])
-		method = sys.argv[3]
-		output_directory = sys.argv[4]
-		output_directory_centroids = sys.argv[5]
+        # input_file = sys.argv[1]
+        # k  = int(sys.argv[2])
+        # method = sys.argv[3]
+        # output_directory = sys.argv[4]
+        # output_directory_centroids = sys.argv[5]
 
 
 
-		sc = SparkContext()
+        # sc = SparkContext()
 
-		data =sc.textFile(sys.argv[1])
+        # data =sc.textFile(sys.argv[1])
 
-		main(data, k, method, output_directory, output_directory_centroids)
+        # main(data, k, method, output_directory, output_directory_centroids)
+
+
+    input_file = "/home/cloudera/final proj/long_lat_data.txt"
+    k =3
+    method = "Eucl"
+    output_directory = "file/home/cloudera/final proj/output1"
+    output_directory_centroids = "file/home/cloudera/final proj/output_cent1"
+
+    sc= SparkContext()
+
+    data =sc.textFile(input_file)\
+    .map(lambda line: line[3:len(line)-2])
+    print data.take(1)
+    print "===================================================="
+    data1=data.map(lambda line:line.split("', u'"))\
+    .map(lambda line: (float(line[0]),float(line[1])))
+
+    print data1.take(1)
+    main(data1, k, method, output_directory, output_directory_centroids)
+
 
 
