@@ -152,45 +152,63 @@ def main(data, k, method, output_directory, output_directory_centroids):
 
 if __name__ == '__main__':
 
-    # if len(sys.argv) != 5: 
-    #   print ("utility : <input_directory>, <k>, <distance_type(Ecul or Cricle)>, <output_directory(data with cluster label)>, <output_directory(cluster center list)>")
+    if len(sys.argv) != 5: 
+      print ("utility : <input_directory>, <k>, <distance_type(Ecul or Cricle)>, <output_directory(data with cluster label)>, <output_directory(cluster center list)>")
 
-    #   exit(-1)
+      exit(-1)
 
-    # else:
+    else:
 
-        # input_file = sys.argv[1]
-        # k  = int(sys.argv[2])
-        # method = sys.argv[3]
-        # output_directory = sys.argv[4]
-        # output_directory_centroids = sys.argv[5]
-
-
-
-        # sc = SparkContext()
-
-        # data =sc.textFile(sys.argv[1])
-
-        # main(data, k, method, output_directory, output_directory_centroids)
+        input_file = sys.argv[1]
+        k  = int(sys.argv[2])
+        method = sys.argv[3]
+        output_directory = sys.argv[4]
+        output_directory_centroids = sys.argv[5]
 
 
-    input_file = "/home/cloudera/final proj/long_lat_data.txt"
-    k =3
-    method = "Eucl"
-    output_directory = "file/home/cloudera/final proj/output1"
-    output_directory_centroids = "file/home/cloudera/final proj/output_cent1"
+
+        sc = SparkContext()
+
+        data =sc.textFile(sys.argv[1])
+
+        main(data, k, method, output_directory, output_directory_centroids)
+
+
+    # input_file = "/home/cloudera/final proj/long_lat_data.txt"
+    # k =3
+    # method = "Eucl"
+    # output_directory = "file/home/cloudera/final proj/output1"
+    # output_directory_centroids = "file/home/cloudera/final proj/output_cent1"
 
     sc= SparkContext()
 
-    data =sc.textFile(input_file)\
-    .map(lambda line: line[3:len(line)-2])
-    print data.take(1)
-    print "===================================================="
+
+    mydata = sc.textFile(input_file) #load file into spark
+
+#setting the delimiter
+    def splitLine(line):
+        delimiter = line[19]
+        return line.split(delimiter)
+
+    #splitting the data into records
+    splitRecords = mydata.map(splitLine)
+    #filtering out the records less than length of 14
+    validLengthRecords = splitRecords.filter(lambda words: len(words) == 14)
+    #Filtering the valid cordinates from the data
+    ValidCoordinates = validLengthRecords.filter(lambda words: (words[-1] != "0" or words[-2] != "0"))
+
+    separateModel = ValidCoordinates.map(lambda words: words[0:1] + words[1].split(" ", 1)+ words[2:])
+    #print separateModel.take(5)
+
+    data = separateModel.map(lambda words: [words[-2],words[-1]])
+
     data1=data.map(lambda line:line.split("', u'"))\
     .map(lambda line: (float(line[0]),float(line[1])))
 
     print data1.take(1)
     main(data1, k, method, output_directory, output_directory_centroids)
+
+    sc.stop()
 
 
 
